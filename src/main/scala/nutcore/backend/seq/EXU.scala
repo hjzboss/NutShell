@@ -37,6 +37,7 @@ class EXU(implicit val p: NutCoreConfig) extends NutCoreModule {
 
   val src1 = io.in.bits.data.src1(XLEN-1,0)
   val src2 = io.in.bits.data.src2(XLEN-1,0)
+  val src3 = io.in.bits.data.src3(XLEN-1,0)
 
   val (fuType, fuOpType) = (io.in.bits.ctrl.fuType, io.in.bits.ctrl.fuOpType)
 
@@ -61,7 +62,7 @@ class EXU(implicit val p: NutCoreConfig) extends NutCoreModule {
   lsu.io.out.ready := true.B
 
   val mdu = Module(new MDU)
-  val mduOut = mdu.access(valid = fuValids(FuType.mdu), src1 = src1, src2 = src2, func = fuOpType)
+  val mduOut = mdu.access(valid = fuValids(FuType.mdu), src1 = src1, src2 = src2, src3 = src3, func = fuOpType)
   mdu.io.out.ready := true.B
 
   // val csr = if (Settings.get("MmodeOnly")) Module(new CSR_M) else Module(new CSR)

@@ -36,26 +36,32 @@ class ISU(implicit val p: NutCoreConfig) extends NutCoreModule with HasRegFilePa
   io.out.bits := DontCare
   val rfSrc1 = io.in(0).bits.ctrl.rfSrc1
   val rfSrc2 = io.in(0).bits.ctrl.rfSrc2
+  val rfSrc3 = io.in(0).bits.ctrl.rfSrc3
   val rfDest1 = io.in(0).bits.ctrl.rfDest
 
   def isDepend(rfSrc: UInt, rfDest: UInt, wen: Bool): Bool = (rfSrc =/= 0.U) && (rfSrc === rfDest) && wen
 
   val forwardRfWen = io.forward.wb.rfWen && io.forward.valid
-  val dontForward1 = (io.forward.fuType =/= FuType.alu) && (io.forward.fuType =/= FuType.lsu)
+  val dontForward1 = (io.forward.fuType =/= FuType.alu) && (io.forward.fuType =/= FuType.lsu) // TODO: crc
   val src1DependEX = isDepend(rfSrc1, io.forward.wb.rfDest, forwardRfWen)
   val src2DependEX = isDepend(rfSrc2, io.forward.wb.rfDest, forwardRfWen)
+  val src3DependEX = isDepend(rfSrc3, io.forward.wb.rfDest, forwardRfWen)
   val src1DependWB = isDepend(rfSrc1, io.wb.rfDest, io.wb.rfWen)
   val src2DependWB = isDepend(rfSrc2, io.wb.rfDest, io.wb.rfWen)
+  val src3DependWB = isDepend(rfSrc3, io.wb.rfDest, io.wb.rfWen)
 
   val src1ForwardNextCycle = src1DependEX && !dontForward1
   val src2ForwardNextCycle = src2DependEX && !dontForward1
+  val src3ForwardNextCycle = src3DependEX && !dontForward1
   val src1Forward = src1DependWB && Mux(dontForward1, !src1DependEX, true.B)
   val src2Forward = src2DependWB && Mux(dontForward1, !src2DependEX, true.B)
+  val src3Forward = src3DependWB && Mux(dontForward1, !src3DependEX, true.B)
 
   val sb = new ScoreBoard
   val src1Ready = !sb.isBusy(rfSrc1) || src1ForwardNextCycle || src1Forward
   val src2Ready = !sb.isBusy(rfSrc2) || src2ForwardNextCycle || src2Forward
-  io.out.valid := io.in(0).valid && src1Ready && src2Ready
+  val src3Ready = !sb.isBusy(rfSrc3) || src3ForwardNextCycle || src3Forward
+  io.out.valid := io.in(0).valid && src1Ready && src2Ready && src3Ready
 
   val rf = new RegFile
 
@@ -72,12 +78,18 @@ class ISU(implicit val p: NutCoreConfig) extends NutCoreModule with HasRegFilePa
     (src2Forward && !src2ForwardNextCycle) -> io.wb.rfData, //io.wb.rfData,
     ((io.in(0).bits.ctrl.src2Type === SrcType.reg) && !src2ForwardNextCycle && !src2Forward) -> rf.read(rfSrc2)
   ))
+  io.out.bits.data.src3 := Mux1H(List(
+    src3ForwardNextCycle -> io.forward.wb.rfData, //io.forward.wb.rfData,
+    (src3Forward && !src3ForwardNextCycle) -> io.wb.rfData, //io.wb.rfData,
+    (!src3ForwardNextCycle && !src3Forward) -> rf.read(rfSrc3)
+  ))
   io.out.bits.data.imm  := io.in(0).bits.data.imm
 
   io.out.bits.cf <> io.in(0).bits.cf
   io.out.bits.ctrl := io.in(0).bits.ctrl
   io.out.bits.ctrl.isSrc1Forward := src1ForwardNextCycle
   io.out.bits.ctrl.isSrc2Forward := src2ForwardNextCycle
+  io.out.bits.ctrl.isSrc3Forward := src3ForwardNextCycle
 
   // retire: write rf
   when (io.wb.rfWen) { rf.write(io.wb.rfDest, io.wb.rfData) }

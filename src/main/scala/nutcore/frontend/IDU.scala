@@ -54,12 +54,13 @@ class Decoder(implicit val p: NutCoreConfig) extends NutCoreModule with HasInstr
     InstrB -> (SrcType.reg, SrcType.reg),
     InstrU -> (SrcType.pc , SrcType.imm),
     InstrJ -> (SrcType.pc , SrcType.imm),
-    InstrN -> (SrcType.pc , SrcType.imm)
+    InstrN -> (SrcType.pc , SrcType.imm),
+    InstrR4-> (SrcType.reg, SrcType.reg)
   )
   val src1Type = LookupTree(instrType, SrcTypeTable.map(p => (p._1, p._2._1)))
   val src2Type = LookupTree(instrType, SrcTypeTable.map(p => (p._1, p._2._2)))
 
-  val (rs, rt, rd) = (instr(19, 15), instr(24, 20), instr(11, 7))
+  val (rs, rt, rd, rs3) = (instr(19, 15), instr(24, 20), instr(11, 7), instr(31, 27))
   // see riscv-spec vol1, Table 16.1: Compressed 16-bit RVC instruction formats.
   val rs1       = instr(11,7)
   val rs2       = instr(6,2)
@@ -88,11 +89,13 @@ class Decoder(implicit val p: NutCoreConfig) extends NutCoreModule with HasInstr
 
   val rfSrc1 = Mux(isRVC, rvc_src1, rs)
   val rfSrc2 = Mux(isRVC, rvc_src2, rt)
+  val rfSrc3 = Mux(isRVC, 0.U, rs3)
   val rfDest = Mux(isRVC, rvc_dest, rd)
   // TODO: refactor decode logic
   // make non-register addressing to zero, since isu.sb.isBusy(0) === false.B
   io.out.bits.ctrl.rfSrc1 := Mux(src1Type === SrcType.pc, 0.U, rfSrc1)
   io.out.bits.ctrl.rfSrc2 := Mux(src2Type === SrcType.reg, rfSrc2, 0.U)
+  io.out.bits.ctrl.rfSrc3 := rfSrc3
   io.out.bits.ctrl.rfWen  := isrfWen(instrType)
   io.out.bits.ctrl.rfDest := Mux(isrfWen(instrType), rfDest, 0.U)
 
@@ -195,7 +198,7 @@ class IDU(implicit val p: NutCoreConfig) extends NutCoreModule with HasInstrType
     val out = Vec(2, Decoupled(new DecodeIO))
   })
   val decoder1  = Module(new Decoder)
-  val decoder2  = Module(new Decoder)
+  val decoder2  = Module(new Decoder) // just for ooo
   io.in(0) <> decoder1.io.in
   io.in(1) <> decoder2.io.in
   io.out(0) <> decoder1.io.out

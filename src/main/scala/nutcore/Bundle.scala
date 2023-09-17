@@ -26,11 +26,13 @@ class CtrlSignalIO extends NutCoreBundle {
   val fuOpType = Output(FuOpType())
   val rfSrc1 = Output(UInt(5.W))
   val rfSrc2 = Output(UInt(5.W))
+  val rfSrc3 = Output(UInt(5.W))
   val rfWen = Output(Bool())
   val rfDest = Output(UInt(5.W))
   val isNutCoreTrap = Output(Bool())
   val isSrc1Forward = Output(Bool())
   val isSrc2Forward = Output(Bool())
+  val isSrc3Forward = Output(Bool())
   val noSpecExec = Output(Bool())  // This inst can not be speculated
   val isBlocked = Output(Bool())   // This inst requires pipeline to be blocked
 }
@@ -38,6 +40,7 @@ class CtrlSignalIO extends NutCoreBundle {
 class DataSrcIO extends NutCoreBundle {
   val src1 = Output(UInt(XLEN.W))
   val src2 = Output(UInt(XLEN.W))
+  val src3 = Output(UInt(XLEN.W))
   val imm  = Output(UInt(XLEN.W))
 }
 

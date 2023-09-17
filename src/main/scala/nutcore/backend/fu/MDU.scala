@@ -23,24 +23,27 @@ import chisel3.util.experimental.BoringUtils
 import utils._
 
 object MDUOpType {
-  def mul    = "b0000".U
-  def mulh   = "b0001".U
-  def mulhsu = "b0010".U
-  def mulhu  = "b0011".U
-  def div    = "b0100".U
-  def divu   = "b0101".U
-  def rem    = "b0110".U
-  def remu   = "b0111".U
+  def mul       = "b00000".U
+  def mulh      = "b00001".U
+  def mulhsu    = "b00010".U
+  def mulhu     = "b00011".U
+  def div       = "b00100".U
+  def divu      = "b00101".U
+  def rem       = "b00110".U
+  def remu      = "b00111".U
 
-  def mulw   = "b1000".U
-  def divw   = "b1100".U
-  def divuw  = "b1101".U
-  def remw   = "b1110".U
-  def remuw  = "b1111".U
+  def mulw      = "b01000".U
+  def mulhash32 = "b11000".U
+  def mulhash64 = "b10000".U
+  def divw      = "b01100".U
+  def divuw     = "b01101".U
+  def remw      = "b01110".U
+  def remuw     = "b01111".U
 
   def isDiv(op: UInt) = op(2)
   def isDivSign(op: UInt) = isDiv(op) && !op(0)
   def isW(op: UInt) = op(3)
+  def isHash(op: UInt) = op(4)
 }
 
 class MulDivIO(val len: Int) extends Bundle {
@@ -130,16 +133,18 @@ class Divider(len: Int = 64) extends NutCoreModule {
 }
 
 class MDUIO extends FunctionUnitIO {
+  val src3 = Input(UInt(XLEN.W))
 }
 
 class MDU extends NutCoreModule {
   val io = IO(new MDUIO)
 
-  val (valid, src1, src2, func) = (io.in.valid, io.in.bits.src1, io.in.bits.src2, io.in.bits.func)
-  def access(valid: Bool, src1: UInt, src2: UInt, func: UInt): UInt = {
+  val (valid, src1, src2, src3, func) = (io.in.valid, io.in.bits.src1, io.in.bits.src2, io.src3, io.in.bits.func)
+  def access(valid: Bool, src1: UInt, src2: UInt, src3:UInt, func: UInt): UInt = {
     this.valid := valid
     this.src1 := src1
     this.src2 := src2
+    this.src3 := src3
     this.func := func
     io.out.bits
   }
@@ -173,15 +178,22 @@ class MDU extends NutCoreModule {
   mul.io.in.valid := io.in.valid && !isDiv
   div.io.in.valid := io.in.valid && isDiv
 
+  // The subtractive part of the multiplication hash
+  val mulHash32 = 32.U - io.src3(4, 0)
+  val mulHash32Reg = RegEnable(mulHash32, 0.U, io.in.fire())
+  val mulHash64 = 64.U - io.src3(5, 0)
+  val mulHash64Reg = RegEnable(mulHash64, 0.U, io.in.fire())
+
   val mulRes = Mux(func(1,0) === MDUOpType.mul(1,0), mul.io.out.bits(XLEN-1,0), mul.io.out.bits(2*XLEN-1,XLEN))
   val divRes = Mux(func(1) /* rem */, div.io.out.bits(2*XLEN-1,XLEN), div.io.out.bits(XLEN-1,0))
-  val res = Mux(isDiv, divRes, mulRes)
+  val mulResPre = Mux(MDUOpType.isHash(func), Mux(isW, ZeroExt(mulRes(31, 0), 64) >> mulHash32Reg, mulRes >> mulHash64Reg), mulRes)
+  val res = Mux(isDiv, divRes, mulResPre)
   io.out.bits := Mux(isW, SignExt(res(31,0),XLEN), res)
 
   val isDivReg = Mux(io.in.fire(), isDiv, RegNext(isDiv))
   io.in.ready := Mux(isDiv, div.io.in.ready, mul.io.in.ready)
   io.out.valid := Mux(isDivReg, div.io.out.valid, mul.io.out.valid)
-
+  Debug(io.out.valid && (func === MDUOpType.mulhash32 || func === MDUOpType.mulhash64), "mulhash detected: src1=%x, src2=%x, src3=%x, res=%x\n", src1, src2, src3, io.out.bits)
   Debug("[FU-MDU] irv-orv %d %d - %d %d\n", io.in.ready, io.in.valid, io.out.ready, io.out.valid)
 
   BoringUtils.addSource(mul.io.out.fire(), "perfCntCondMmulInstr")
